@@ -380,28 +380,7 @@ async def set_work(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("✅ Ты снова в строю!")
 
-async def get_emoji_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отвечает ID кастомного эмодзи"""
-    custom_emoji_id = None
-    
-    if update.message.entities:
-        for entity in update.message.entities:
-            if entity.type == 'custom_emoji':
-                custom_emoji_id = entity.custom_emoji_id
-                break
-    
-    if custom_emoji_id:
-        await update.message.reply_text(
-            f"Emoji: <code>{update.message.text}</code>\n"
-            f"ID: <code>{custom_emoji_id}</code>",
-            parse_mode='HTML'
-        )
-    else:
-        await update.message.reply_text("❌ Здесь нет кастомного эмодзи")
-
 def main():
-    from telegram.ext import MessageHandler, filters
-    
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -412,9 +391,6 @@ def main():
     app.add_handler(CommandHandler("work", set_work))
     app.add_handler(CommandHandler("sync", sync_chat_members))
     
-    # Хэндлер для получения ID эмодзи
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_emoji_id))
-
     print("Бот запущен...")
     app.run_polling()
 

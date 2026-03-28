@@ -1,7 +1,10 @@
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
+
+# Московское время (UTC+3)
+MSK = timezone(timedelta(hours=3))
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -17,6 +20,9 @@ EMOJI_WORK = "5317051379372532889"      # 🏃‍♂️ работают
 EMOJI_COMMON_OFF = "5319087606187695888"  # 🚬 общий выходной
 EMOJI_UNEMPLOYED = "5357271420227297695"  # 😎 безработные
 EMOJI_REST = "5210956306952758910"    # 👀 выходной
+
+# Дни зала: ключ — weekday() (0=пн), значение — подпись или None
+GYM_DAYS = {1: None, 3: "Ноги", 5: None}  # вт, чт (ноги), сб
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -73,6 +79,34 @@ def find_common_day_off(data, today):
 
     return None
 
+def find_next_common_gym_day(data, today):
+    """Ищет ближайший день зала (вт/чт/сб), когда все gym=True свободны."""
+    gym_users = {uid: info for uid, info in data.items() if info.get("gym", False)}
+    if not gym_users:
+        return None
+
+    scheduled_gym = {
+        uid: info for uid, info in gym_users.items()
+        if "schedule" in info and not info.get("unemployed", False)
+    }
+
+    for i in range(365):
+        check_date = today + timedelta(days=i)
+        if check_date.weekday() not in GYM_DAYS:
+            continue
+        all_free = all(
+            get_day_status(
+                info["schedule"][0], info["schedule"][1],
+                datetime.strptime(info["start_date"], "%Y-%m-%d").date(),
+                check_date
+            ) == "rest"
+            for info in scheduled_gym.values()
+        )
+        if all_free:
+            return check_date, GYM_DAYS[check_date.weekday()]
+
+    return None
+
 async def sync_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Синхронизирует участников чата"""
     global CHAT_ID
@@ -124,7 +158,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/dayoff — ближайший общий выходной\n"
         "/unemployed — стать безработным 😎\n"
         "/work — вернуться к графику\n"
-        "/sync — синхронизировать участников чата"
+        "/sync — синхронизировать участников чата\n"
+        "/gum — записаться/отписаться от зала (Вт/Чт/Сб)"
     )
 
 async def set_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,7 +221,7 @@ async def set_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Парсим дату начала
-    start_date = datetime.now().date()  # по умолчанию сегодня
+    start_date = datetime.now(MSK).date()  # по умолчанию сегодня
 
     if len(args) > start_idx + 1:
         date_str = args[start_idx + 1]
@@ -240,7 +275,7 @@ def parse_date(date_str):
             parsed = datetime.strptime(date_str, fmt)
             # Если год не указан — используем текущий
             if fmt == "%d.%m":
-                parsed = parsed.replace(year=datetime.now().year)
+                parsed = parsed.replace(year=datetime.now(MSK).year)
             return parsed.date()
         except ValueError:
             continue
@@ -248,7 +283,7 @@ def parse_date(date_str):
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
-    today = datetime.now().date()
+    today = datetime.now(MSK).date()
 
     # Если в чате — показываем всех участников
     chat_id = context.bot_data.get('chat_id')
@@ -286,31 +321,29 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         work_days, rest_days = info["schedule"]
         start_date = datetime.strptime(info["start_date"], "%Y-%m-%d").date()
+        delta = (today - start_date).days
+        cycle = work_days + rest_days
+        day_in_cycle = delta % cycle
+        schedule_str = f"{work_days}/{rest_days}"
 
         if get_day_status(work_days, rest_days, start_date, today) == "work":
-            # Считаем сколько дней ещё работать до выходного
-            delta = (today - start_date).days
-            cycle = work_days + rest_days
-            day_in_cycle = delta % cycle
             days_left = work_days - day_in_cycle - 1
-            workers.append((name, days_left))
+            workers.append((name, days_left, schedule_str))
         else:
-            # Считаем сколько дней ещё отдыхать
-            delta = (today - start_date).days
-            cycle = work_days + rest_days
-            day_in_cycle = delta % cycle
-            days_left = (work_days + rest_days) - day_in_cycle - 1
-            resting.append((name, days_left))
+            days_left = cycle - day_in_cycle - 1
+            resting.append((name, days_left, schedule_str))
 
     # Формируем дату
     weekdays = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-    months = ["января", "февраля", "марта", "апреля", "мая", "июня", 
+    short_weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    months = ["января", "февраля", "марта", "апреля", "мая", "июня",
               "июля", "августа", "сентября", "октября", "ноября", "декабря"]
-    
+
     weekday = weekdays[today.weekday()]
     day_num = f"{today.day} {months[today.month - 1]}"
-    
-    response = f"Сегодня – {weekday} {day_num}\n\n"
+
+    response = f"📅 <b>{weekday}, {day_num}</b>\n"
+    response += "━━━━━━━━━━━━━━━━━━━━\n"
 
     # Добавляем ближайший общий выходной
     common_date = find_common_day_off(data, today)
@@ -318,27 +351,90 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         common_weekday = weekdays[common_date.weekday()]
         common_day_num = f"{common_date.day} {months[common_date.month - 1]}"
         if common_date == today:
-            response += f"<tg-emoji emoji-id=\"{EMOJI_COMMON_OFF}\">🚬</tg-emoji> Сегодня у всех выходной!\n\n"
+            response += f"\n<tg-emoji emoji-id=\"{EMOJI_COMMON_OFF}\">🚬</tg-emoji> <b>Сегодня у всех выходной!</b>\n"
         else:
-            response += f"<tg-emoji emoji-id=\"{EMOJI_COMMON_OFF}\">🚬</tg-emoji> Общий выходной – {common_weekday} {common_day_num}\n\n"
+            days_until = (common_date - today).days
+            response += f"\n<tg-emoji emoji-id=\"{EMOJI_COMMON_OFF}\">🚬</tg-emoji> Общий выходной — <b>{common_weekday}, {common_day_num}</b> (через {days_until} дн.)\n"
 
     if resting:
-        response += f"<tg-emoji emoji-id=\"{EMOJI_REST}\">👀</tg-emoji> Выходной:\n" + "\n".join(f"— {name} • {days} дн." for name, days in resting) + "\n\n"
+        response += f"\n<tg-emoji emoji-id=\"{EMOJI_REST}\">👀</tg-emoji> <b>Выходной:</b>\n"
+        for name, days, sched in resting:
+            if days == 0:
+                response += f"  {name} <i>({sched})</i> — последний день\n"
+            else:
+                response += f"  {name} <i>({sched})</i> — ещё {days} дн.\n"
 
     if workers:
-        response += f"<tg-emoji emoji-id=\"{EMOJI_WORK}\">🏃‍♂️</tg-emoji> Работают:\n" + "\n".join(f"— {name} • {days} дн." for name, days in workers) + "\n\n"
+        response += f"\n<tg-emoji emoji-id=\"{EMOJI_WORK}\">🏃‍♂️</tg-emoji> <b>Работают:</b>\n"
+        for name, days, sched in workers:
+            if days == 0:
+                response += f"  {name} <i>({sched})</i> — последний день\n"
+            else:
+                response += f"  {name} <i>({sched})</i> — ещё {days} дн.\n"
 
     if unemployed:
-        response += f"<tg-emoji emoji-id=\"{EMOJI_UNEMPLOYED}\">😎</tg-emoji> БЫТЬ БОГАТЫМ АХУЕННАААА:\n" + "\n".join(f"— {name}" for name in unemployed) + "\n\n"
+        response += f"\n<tg-emoji emoji-id=\"{EMOJI_UNEMPLOYED}\">😎</tg-emoji> <b>БЫТЬ БОГАТЫМ АХУЕННАААА:</b>\n"
+        for name in unemployed:
+            response += f"  {name}\n"
 
     if not workers and not resting and not unemployed:
-        response += "Нет данных"
+        response += "\nНет данных"
+
+    # Блок зала — только если сегодня день зала
+    weekday_num = today.weekday()
+    if weekday_num in GYM_DAYS:
+        label = GYM_DAYS[weekday_num]
+        gym_header = f"🏋️ <b>Зал сегодня</b>" + (f" — <b>{label}</b>" if label else "")
+
+        gym_can = []    # gym=True и выходной/безработный
+        gym_cant = []   # gym=True и работает
+
+        for uid, info in data.items():
+            if not info.get("gym", False):
+                continue
+            name = info.get("name", "Неизвестно")
+            if info.get("unemployed", False) or "schedule" not in info:
+                gym_can.append(name)
+            else:
+                work_days, rest_days = info["schedule"]
+                start_date = datetime.strptime(info["start_date"], "%Y-%m-%d").date()
+                if get_day_status(work_days, rest_days, start_date, today) == "rest":
+                    gym_can.append(name)
+                else:
+                    gym_cant.append(name)
+
+        if gym_can or gym_cant:
+            response += f"\n{gym_header}\n"
+            if gym_can and not gym_cant:
+                response += "  🎉 Протеин отдай, сука!\n"
+            for name in gym_can:
+                response += f"  ✅ {name}\n"
+            for name in gym_cant:
+                response += f"  ❌ {name} (работает)\n"
+
+    # Ближайший общий день зала — показываем всегда
+    gym_members_exist = any(info.get("gym", False) for info in data.values())
+    if gym_members_exist:
+        gym_day_result = find_next_common_gym_day(data, today)
+        if gym_day_result:
+            next_gym_date, gym_label = gym_day_result
+            next_gym_weekday = short_weekdays[next_gym_date.weekday()]
+            next_gym_day_num = f"{next_gym_date.day} {months[next_gym_date.month - 1]}"
+            if next_gym_date == today:
+                response += "\n🏋️ <b>Сегодня все идут в зал!</b>\n"
+            else:
+                days_until_gym = (next_gym_date - today).days
+                label_part = f" ({gym_label})" if gym_label else ""
+                response += (
+                    f"\n🏋️ Все в зале — <b>{next_gym_weekday}, {next_gym_day_num}</b>"
+                    f"{label_part} (через {days_until_gym} дн.)\n"
+                )
 
     await update.message.reply_text(response.strip(), parse_mode='HTML')
 
 async def common_dayoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
-    today = datetime.now().date()
+    today = datetime.now(MSK).date()
     
     common_date = find_common_day_off(data, today)
     
@@ -380,6 +476,24 @@ async def set_work(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("✅ Ты снова в строю!")
 
+async def toggle_gym(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    name = update.effective_user.first_name
+    data = load_data()
+
+    if user_id not in data:
+        data[user_id] = {"name": name, "unemployed": True}
+
+    currently = data[user_id].get("gym", False)
+    data[user_id]["gym"] = not currently
+    data[user_id]["name"] = name
+    save_data(data)
+
+    if not currently:
+        await update.message.reply_text("🏋️ Истории бати Сени! Вт/Чт/Сб — не пропускай.")
+    else:
+        await update.message.reply_text("👋 Теперь ты без историй от бати Сени.")
+
 def main():
     app = Application.builder().token(TOKEN).build()
 
@@ -390,6 +504,7 @@ def main():
     app.add_handler(CommandHandler("unemployed", set_unemployed))
     app.add_handler(CommandHandler("work", set_work))
     app.add_handler(CommandHandler("sync", sync_chat_members))
+    app.add_handler(CommandHandler("gum", toggle_gym))
     
     print("Бот запущен...")
     app.run_polling()

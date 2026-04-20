@@ -20,11 +20,13 @@ export function Shell({
   children,
   hideNav,
   back,
+  right,
 }: {
   title?: string;
   children: ReactNode;
   hideNav?: boolean;
   back?: boolean;
+  right?: ReactNode;
 }) {
   const { auth, tg, hapticTap } = useTg();
   const pathname = usePathname();
@@ -59,16 +61,19 @@ export function Shell({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {title && (
-        <header className="px-4 py-3 border-b border-[var(--tg-secbg)] shrink-0">
-          <motion.h1
-            key={title}
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-lg font-semibold"
-          >
-            {title}
-          </motion.h1>
+      {(title || right) && (
+        <header className="px-4 py-3 border-b border-[var(--tg-secbg)] shrink-0 flex items-center gap-3">
+          {title && (
+            <motion.h1
+              key={title}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-lg font-semibold flex-1"
+            >
+              {title}
+            </motion.h1>
+          )}
+          {right && <div className="shrink-0 flex items-center gap-1">{right}</div>}
         </header>
       )}
       <main className="flex-1 overflow-y-auto min-h-0">{children}</main>

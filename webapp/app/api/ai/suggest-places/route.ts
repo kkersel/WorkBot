@@ -65,7 +65,7 @@ export async function POST(req: Request): Promise<Response> {
       system: SYSTEM,
       user,
       temperature: 0.5,
-      maxTokens: 1200,
+      maxTokens: 2200,
     });
     return json({ ok: true, ...result });
   } catch (e) {

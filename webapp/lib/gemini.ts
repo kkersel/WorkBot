@@ -63,7 +63,40 @@ export async function geminiGen(opts: GenOpts): Promise<string> {
 
 export async function geminiJSON<T>(opts: GenOpts): Promise<T> {
   const raw = await geminiGen({ ...opts, json: true });
-  return JSON.parse(extractJson(raw)) as T;
+  const candidate = extractJson(raw);
+  try {
+    return JSON.parse(candidate) as T;
+  } catch (err) {
+    // Try to repair common model mistakes before giving up.
+    const repaired = repairJson(candidate);
+    try {
+      return JSON.parse(repaired) as T;
+    } catch {
+      // Surface the original error with a bit of the payload for debugging.
+      const snippet = candidate.slice(0, 200).replace(/\s+/g, " ");
+      throw new Error(`${(err as Error).message} — near: ${snippet}`);
+    }
+  }
+}
+
+function repairJson(s: string): string {
+  let out = s;
+  // Smart quotes → regular
+  out = out.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+  // Trailing commas before } or ]
+  out = out.replace(/,\s*([}\]])/g, "$1");
+  // Double trailing commas like `,,` → single
+  out = out.replace(/,\s*,/g, ",");
+  // Unclosed final object/array — add closers greedily (best-effort)
+  const opens = (out.match(/[{[]/g) ?? []).length;
+  const closes = (out.match(/[}\]]/g) ?? []).length;
+  if (opens > closes) {
+    // Close with the opposite brace of whatever was most recently opened;
+    // simplest safe heuristic: prefer } then ].
+    const deficit = opens - closes;
+    out += "}".repeat(Math.min(deficit, 3));
+  }
+  return out;
 }
 
 /**

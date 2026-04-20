@@ -10,14 +10,10 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -32,6 +28,9 @@ MANIFEST
 venv/
 env/
 ENV/
+# NOTE: do NOT ignore generic `lib/`, `build/`, `dist/` at repo root —
+# they collide with webapp/ source dirs. Python venv stuff is already
+# excluded via the .venv/venv/env/ENV entries above.
 
 # ============ Node / Next.js (webapp) ============
 node_modules/
@@ -39,7 +38,7 @@ node_modules/
 .turbo/
 .vercel/
 out/
-dist/
+webapp/dist/
 *.tsbuildinfo
 next-env.d.ts
 npm-debug.log*

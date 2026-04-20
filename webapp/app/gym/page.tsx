@@ -169,7 +169,6 @@ export default function GymPage() {
             <TodayBlock
               today={today}
               myId={auth.status === "ready" ? auth.user.id : null}
-              isAdmin={isAdmin}
               pingedIds={pingedIds}
               onPing={ping}
             />
@@ -305,13 +304,11 @@ export default function GymPage() {
 function TodayBlock({
   today,
   myId,
-  isAdmin,
   pingedIds,
   onPing,
 }: {
   today: TodayResponse;
   myId: number | null;
-  isAdmin: boolean;
   pingedIds: Set<number>;
   onPing: (userId: number) => void;
 }) {
@@ -363,7 +360,7 @@ function TodayBlock({
           people={pending}
           myId={myId}
           actions={(p) =>
-            isAdmin && p.user_id !== myId ? (
+            p.user_id !== myId ? (
               <Button
                 size="sm"
                 variant={pingedIds.has(p.user_id) ? "secondary" : "ghost"}

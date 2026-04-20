@@ -9,7 +9,7 @@ import { PageTransition } from "@/components/ui/PageTransition";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { SmartAvatar } from "@/components/ui/SmartAvatar";
 import { api } from "@/lib/api";
-import { RU_WEEKDAYS_SHORT } from "@/lib/format";
+import { RU_MONTHS_GEN, RU_WEEKDAYS_SHORT } from "@/lib/format";
 
 type Attendance = "yes" | "no" | "pending";
 
@@ -38,6 +38,13 @@ type MyPlan = {
 
 type GlobalSettings = { poll_hour_msk: number };
 
+type UpcomingDay = {
+  date: string;
+  weekday: number;
+  theme: string | null;
+  people: TodayResponse["people"];
+};
+
 export default function GymPage() {
   const { auth, haptic, hapticTap } = useTg();
   const [today, setToday] = useState<TodayResponse | null>(null);
@@ -45,6 +52,7 @@ export default function GymPage() {
   const [settings, setSettings] = useState<{ settings: GlobalSettings; can_edit: boolean } | null>(
     null,
   );
+  const [upcoming, setUpcoming] = useState<UpcomingDay[] | null>(null);
   const [savingPlan, setSavingPlan] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [pingedIds, setPingedIds] = useState<Set<number>>(new Set());
@@ -59,9 +67,19 @@ export default function GymPage() {
     }
   }, []);
 
+  const loadUpcoming = useCallback(async () => {
+    try {
+      const r = await api.get<{ days: UpcomingDay[] }>("/api/gym/upcoming?days=21");
+      setUpcoming(r.days);
+    } catch {
+      setUpcoming([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (auth.status !== "ready") return;
     loadToday();
+    loadUpcoming();
     api
       .get<{ plan: MyPlan }>("/api/me/gym")
       .then((r) => setPlan(r.plan))
@@ -70,7 +88,7 @@ export default function GymPage() {
       .get<{ settings: GlobalSettings; can_edit: boolean }>("/api/gym/settings")
       .then(setSettings)
       .catch(() => {});
-  }, [auth.status, loadToday]);
+  }, [auth.status, loadToday, loadUpcoming]);
 
   async function ping(userId: number) {
     try {
@@ -178,9 +196,16 @@ export default function GymPage() {
             </div>
           )}
 
+          {/* Upcoming gym days — calendar strip */}
+          {upcoming === null ? (
+            <Skeleton className="h-32" />
+          ) : upcoming.length > 0 ? (
+            <UpcomingStrip days={upcoming} today={today?.date ?? null} />
+          ) : null}
+
           {/* Admin global settings */}
           {settings && isAdmin && (
-            <section className="rounded-2xl bg-[var(--tg-secbg)] p-4 space-y-3 ring-1 ring-[var(--tg-link)]/40">
+            <section className="rounded-2xl bg-[var(--tg-secbg)] p-4 space-y-4 ring-1 ring-[var(--tg-link)]/40">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold">⚙️ настройки чата</span>
                 <span className="text-[10px] text-hint uppercase tracking-wider">
@@ -194,6 +219,12 @@ export default function GymPage() {
                   onChange={saveSettings}
                   saving={savingSettings}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <div className="text-xs text-hint">
+                  отправляет пинг всей группе прямо сейчас (для теста)
+                </div>
+                <BroadcastButton />
               </div>
             </section>
           )}
@@ -444,6 +475,165 @@ function Group({
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+function UpcomingStrip({ days, today }: { days: UpcomingDay[]; today: string | null }) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <div className="text-xs uppercase tracking-wider text-hint">
+          календарь зала
+        </div>
+        <div className="text-[10px] text-hint">{days.length} дн.</div>
+      </div>
+      <div className="flex gap-2 overflow-x-auto -mx-4 px-4 pb-1">
+        {days.map((d, i) => (
+          <UpcomingCard key={d.date} day={d} isToday={d.date === today} index={i} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function UpcomingCard({
+  day,
+  isToday,
+  index,
+}: {
+  day: UpcomingDay;
+  isToday: boolean;
+  index: number;
+}) {
+  const yes = day.people.filter((p) => p.attendance === "yes");
+  const no = day.people.filter((p) => p.attendance === "no");
+  const pending = day.people.filter((p) => p.attendance === "pending");
+  const [, m, d] = day.date.split("-").map(Number);
+  const wd = RU_WEEKDAYS_SHORT[day.weekday];
+  const monthShort = RU_MONTHS_GEN[m - 1];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04, type: "spring", stiffness: 400, damping: 28 }}
+      className={`shrink-0 w-40 rounded-2xl p-3 space-y-2 ring-1 ${
+        isToday
+          ? "bg-btn/10 ring-[var(--tg-link)]"
+          : "bg-[var(--tg-secbg)] ring-transparent"
+      }`}
+    >
+      <div className="flex items-baseline justify-between">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-hint">{wd}</div>
+          <div className="text-sm font-semibold">
+            {d} {monthShort}
+          </div>
+        </div>
+        {isToday && (
+          <div className="text-[10px] font-semibold text-link uppercase">сегодня</div>
+        )}
+      </div>
+      {day.theme && (
+        <div className="text-[11px] text-hint truncate">💪 {day.theme}</div>
+      )}
+      <div className="flex items-center gap-1">
+        <AvatarStackMini people={yes} />
+        {yes.length > 0 && <span className="text-[10px] text-green-500">✓{yes.length}</span>}
+      </div>
+      <div className="flex flex-wrap gap-1 text-[9px]">
+        {yes.length > 0 && (
+          <span className="px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-500">
+            идут {yes.length}
+          </span>
+        )}
+        {no.length > 0 && (
+          <span className="px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-500">
+            сливают {no.length}
+          </span>
+        )}
+        {pending.length > 0 && (
+          <span className="px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-500">
+            ? {pending.length}
+          </span>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+function AvatarStackMini({
+  people,
+}: {
+  people: Array<{ user_id: number; name: string; photo_url: string | null }>;
+}) {
+  if (people.length === 0) {
+    return <div className="text-[10px] text-hint">ещё никто</div>;
+  }
+  const visible = people.slice(0, 4);
+  const extra = people.length - visible.length;
+  return (
+    <div className="flex -space-x-1.5">
+      {visible.map((p) => (
+        <SmartAvatar
+          key={p.user_id}
+          userId={p.user_id}
+          name={p.name}
+          src={p.photo_url}
+          size={20}
+          ringClass="ring-2 ring-[var(--tg-bg)]"
+        />
+      ))}
+      {extra > 0 && (
+        <div className="w-5 h-5 rounded-full bg-[var(--tg-bg)] flex items-center justify-center text-[9px] font-bold">
+          +{extra}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BroadcastButton() {
+  const { haptic } = useTg();
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  async function send() {
+    setState("sending");
+    setError(null);
+    try {
+      const r = await api.post<{ pinged: number }>("/api/gym/broadcast", {});
+      setState("sent");
+      haptic("success");
+      setTimeout(() => setState("idle"), 2500);
+      void r;
+    } catch (e) {
+      setState("error");
+      haptic("error");
+      setError((e as Error).message);
+      setTimeout(() => setState("idle"), 3500);
+    }
+  }
+
+  const label =
+    state === "sending"
+      ? "отправляю…"
+      : state === "sent"
+        ? "отправлено ✓"
+        : state === "error"
+          ? error ?? "ошибка"
+          : "🔔 пингануть всех сейчас";
+
+  return (
+    <Button
+      fullWidth
+      variant={state === "sent" ? "secondary" : "primary"}
+      loading={state === "sending"}
+      disabled={state !== "idle" && state !== "error"}
+      onClick={send}
+    >
+      {label}
+    </Button>
   );
 }
 

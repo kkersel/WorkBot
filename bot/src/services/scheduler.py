@@ -33,8 +33,28 @@ async def _global_poll_hour() -> int:
     return 20
 
 
+def _mention(u: dict) -> str:
+    """Build an HTML mention. Prefers @username, falls back to tg://user?id=."""
+    username = (u.get("username") or "").strip()
+    if username:
+        return f"@{username}"
+    name = u.get("first_name") or "друг"
+    # escape minimal HTML chars in the display name
+    name_html = (
+        name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+    return f'<a href="tg://user?id={u["id"]}">{name_html}</a>'
+
+
 async def run_evening_gym_poll(bot: Bot, hour_msk: int) -> None:
-    """Runs every hour; sends a poll if the *global* gym hour matches."""
+    """Runs every hour; sends a poll if the *global* gym hour matches.
+
+    What it sends:
+      1) a DM to every enabled user whose today-weekday is a gym day and who
+         is not working today
+      2) one broadcast message into PRIMARY_CHAT_ID mentioning all those users
+         so they get pinged in the group too
+    """
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     from .. import texts
 
@@ -56,21 +76,43 @@ async def run_evening_gym_poll(bot: Bot, hour_msk: int) -> None:
         InlineKeyboardButton(text="❌ слив", callback_data=f"gym:no:{today.isoformat()}"),
     ]])
 
+    # 1) DMs — личные напоминания
+    eligible: list[dict] = []
+    theme: str | None = None
     for u in users:
         if not u.get("evening_poll"):
             continue
         if status_by_user.get(u["id"]) == "work":
-            continue  # работаешь сегодня — бот не трогает
+            continue  # работает сегодня — бот не трогает
+
+        eligible.append(u)
 
         day_entry = (u.get("days") or {}).get(str(weekday), {}) or {}
         label = day_entry.get("label") or ""
+        if label and theme is None:
+            theme = label
         greeting = texts.pick(texts.GYM_POLL, name=u["first_name"])
         if label:
             greeting += f"\n<i>тема: {label}</i>"
         try:
             await bot.send_message(u["id"], greeting, reply_markup=kb)
         except Exception as e:
-            log.warning("failed to send gym poll to %s: %s", u["id"], e)
+            log.warning("failed to send gym poll DM to %s: %s", u["id"], e)
+
+    # 2) Групповой пинг в PRIMARY_CHAT_ID — одним сообщением с mentions
+    if eligible and config.PRIMARY_CHAT_ID:
+        mentions = " ".join(_mention(u) for u in eligible)
+        header = "💪 <b>день зала</b>"
+        if theme:
+            header += f" · <i>{theme}</i>"
+        group_text = f"{header}\n{mentions}\n\nкто идёт?"
+        try:
+            await bot.send_message(
+                config.PRIMARY_CHAT_ID, group_text, reply_markup=kb,
+            )
+        except Exception as e:
+            log.warning("failed to broadcast gym poll to group %s: %s",
+                        config.PRIMARY_CHAT_ID, e)
 
 
 async def run_calendar_sync() -> None:

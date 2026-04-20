@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --tg-bg: #ffffff;
+  --tg-fg: #000000;
+  --tg-hint: #707579;
+  --tg-link: #2481cc;
+  --tg-btn: #2481cc;
+  --tg-btn-fg: #ffffff;
+  --tg-secbg: #f1f1f4;
+
+  --background: var(--tg-bg);
+  --foreground: var(--tg-fg);
+}
+
+html.tg-dark {
+  --tg-bg: #17212b;
+  --tg-fg: #ffffff;
+  --tg-hint: #708499;
+  --tg-link: #6ab3f3;
+  --tg-btn: #5288c1;
+  --tg-btn-fg: #ffffff;
+  --tg-secbg: #232e3c;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-hint: var(--tg-hint);
+  --color-link: var(--tg-link);
+  --color-btn: var(--tg-btn);
+  --color-btn-fg: var(--tg-btn-fg);
+  --color-secbg: var(--tg-secbg);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html, body {
+  background: var(--tg-bg);
+  color: var(--tg-fg);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+body {
+  font-family: var(--font-sans, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+}
+
+/* Telegram mini-app iframe can have an unstyled viewport; normalize */
+* { -webkit-font-smoothing: antialiased; }
+
+.safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom, 0) + 8px); }

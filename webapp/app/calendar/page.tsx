@@ -7,6 +7,7 @@ import { useTg } from "@/components/TgApp";
 import { Button } from "@/components/ui/Button";
 import { PageTransition } from "@/components/ui/PageTransition";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { SmartAvatar } from "@/components/ui/SmartAvatar";
 import { api } from "@/lib/api";
 import { RU_MONTHS_NOM, RU_WEEKDAYS_SHORT } from "@/lib/format";
 import { todayMSK, weekdayMonFirst, type DayStatus } from "@/lib/schedule";
@@ -344,25 +345,13 @@ function AvatarStack({ users, extra }: { users: TeamUser[]; extra: number }) {
 }
 
 function Avatar({ user, size = 32 }: { user: TeamUser; size?: number }) {
-  const initial = user.name.slice(0, 1).toUpperCase();
-  if (user.photo_url) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return (
-      <img
-        src={user.photo_url}
-        alt={user.name}
-        style={{ width: size, height: size }}
-        className="rounded-full object-cover border border-[var(--tg-bg)]"
-      />
-    );
-  }
   return (
-    <div
-      style={{ width: size, height: size, fontSize: size * 0.46 }}
-      className="rounded-full bg-gradient-to-br from-[var(--tg-link)] to-purple-500 text-white font-semibold flex items-center justify-center border border-[var(--tg-bg)]"
-    >
-      {initial}
-    </div>
+    <SmartAvatar
+      userId={user.id}
+      name={user.name}
+      src={user.photo_url}
+      size={size}
+    />
   );
 }
 

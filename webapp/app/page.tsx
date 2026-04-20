@@ -7,6 +7,7 @@ import { Shell } from "@/components/Shell";
 import { useTg } from "@/components/TgApp";
 import { PageTransition } from "@/components/ui/PageTransition";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { SmartAvatar } from "@/components/ui/SmartAvatar";
 import { api } from "@/lib/api";
 import {
   fmtDayLong,
@@ -225,6 +226,7 @@ function TeamStrip({
           className="flex flex-col items-center gap-1 min-w-[52px]"
         >
           <AvatarWithStatus
+            id={v.user_id}
             name={v.name}
             src={v.photo_url}
             status={v.status}
@@ -237,10 +239,12 @@ function TeamStrip({
 }
 
 function AvatarWithStatus({
+  id,
   name,
   src,
   status,
 }: {
+  id: number;
   name: string;
   src: string | null;
   status: DayStatus;
@@ -253,23 +257,9 @@ function AvatarWithStatus({
     unemployed: "ring-[var(--tg-bg)]",
   }[status];
   const dim = status === "work" || status === "holiday" ? "" : "opacity-70";
-  const initial = name.slice(0, 1).toUpperCase();
   return (
     <div className={`relative ${dim}`}>
-      {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={src}
-          alt={name}
-          className={`w-10 h-10 rounded-full object-cover ring-2 ${ring}`}
-        />
-      ) : (
-        <div
-          className={`w-10 h-10 rounded-full bg-gradient-to-br from-[var(--tg-link)] to-purple-500 text-white font-semibold flex items-center justify-center ring-2 ${ring}`}
-        >
-          {initial}
-        </div>
-      )}
+      <SmartAvatar userId={id} name={name} src={src} size={40} ringClass={`ring-2 ${ring}`} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Shell } from "@/components/Shell";
 import { useTg } from "@/components/TgApp";
 import { Button } from "@/components/ui/Button";
@@ -11,44 +11,55 @@ import { api } from "@/lib/api";
 type Place = {
   name: string;
   address: string | null;
+  kind: string | null;
   why: string | null;
   price_range: string | null;
   url: string | null;
   phone: string | null;
   emoji: string | null;
+  step?: number | null;
 };
 
-const KINDS = [
-  { v: "бар", emoji: "🍸", label: "бар" },
-  { v: "пул", emoji: "🎱", label: "пул" },
-  { v: "кофе", emoji: "☕️", label: "кофе" },
-  { v: "кино", emoji: "🎬", label: "кино" },
-  { v: "кафе", emoji: "🍔", label: "кафе" },
-  { v: "боулинг", emoji: "🎳", label: "боулинг" },
-  { v: "караоке", emoji: "🎤", label: "караоке" },
-  { v: "кальян", emoji: "💨", label: "кальян" },
+type AiResponse = {
+  reply: string | null;
+  places: Place[];
+};
+
+type Msg =
+  | { role: "user"; text: string }
+  | { role: "ai"; reply: string | null; places: Place[]; sent?: number[] };
+
+const EXAMPLES = [
+  { icon: "🍸", text: "бар с террасой в центре" },
+  { icon: "🎳", text: "сначала боулинг потом пул и бар" },
+  { icon: "☕️", text: "тихое кафе для разговоров" },
+  { icon: "🎤", text: "караоке на компанию 6 человек" },
+  { icon: "💨", text: "хорошая кальянная на Патриках" },
+  { icon: "🎬", text: "кино на новинки рядом с метро" },
 ];
 
 export default function InvitePage() {
   const { auth, haptic, hapticTap, tg } = useTg();
-  const [kind, setKind] = useState<string>("бар");
-  const [hint, setHint] = useState("");
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [places, setPlaces] = useState<Place[] | null>(null);
+  const [messages, setMessages] = useState<Msg[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState<number | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  async function ask() {
-    setLoading(true);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, loading]);
+
+  async function ask(text?: string) {
+    const prompt = (text ?? input).trim();
+    if (!prompt || loading) return;
+    setInput("");
     setError(null);
-    setPlaces(null);
+    setMessages((m) => [...m, { role: "user", text: prompt }]);
+    setLoading(true);
     try {
-      const r = await api.post<{ places: Place[] }>("/api/ai/suggest-places", {
-        kind,
-        hint: hint.trim() || null,
-        count: 3,
-      });
-      setPlaces(r.places);
+      const r = await api.post<AiResponse>("/api/ai/suggest-places", { prompt });
+      setMessages((m) => [...m, { role: "ai", reply: r.reply, places: r.places ?? [] }]);
       haptic("success");
     } catch (e) {
       haptic("error");
@@ -58,19 +69,29 @@ export default function InvitePage() {
     }
   }
 
-  async function sendToGroup(p: Place, i: number) {
+  async function sendToGroup(msgIdx: number, placeIdx: number) {
     if (auth.status !== "ready") return;
+    const msg = messages[msgIdx];
+    if (msg.role !== "ai") return;
+    const place = msg.places[placeIdx];
     try {
+      const kind = place.kind || "встреча";
       await api.post("/api/invite/send", {
         kind,
         inviter_name: auth.user.first_name,
-        place: p,
+        place,
       });
       haptic("success");
-      setSent(i);
-      setTimeout(() => {
-        try { tg?.close(); } catch {}
-      }, 900);
+      setMessages((prev) => {
+        const next = [...prev];
+        const m = next[msgIdx];
+        if (m.role === "ai") {
+          const sent = new Set(m.sent ?? []);
+          sent.add(placeIdx);
+          next[msgIdx] = { ...m, sent: Array.from(sent) };
+        }
+        return next;
+      });
     } catch (e) {
       haptic("error");
       setError((e as Error).message);
@@ -88,92 +109,177 @@ export default function InvitePage() {
   return (
     <Shell title="куда пойти?">
       <PageTransition>
-        <div className="p-4 space-y-5 pb-6">
-          <div className="text-hint text-sm">
-            выбери тип, добавь пожелание и ✨ AI предложит места в Москве
-          </div>
+        <div className="flex-1 flex flex-col">
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4">
+            {messages.length === 0 && <Welcome onExample={(t) => { hapticTap(); ask(t); }} />}
 
-          {/* Kind picker */}
-          <div>
-            <div className="text-xs uppercase tracking-wider text-hint mb-2 px-1">тип</div>
-            <div className="grid grid-cols-4 gap-2">
-              {KINDS.map((k) => (
-                <motion.button
-                  key={k.v}
-                  whileTap={{ scale: 0.94 }}
-                  onClick={() => {
-                    hapticTap();
-                    setKind(k.v);
-                  }}
-                  className={`rounded-2xl py-3 flex flex-col items-center gap-0.5 transition-colors ${
-                    kind === k.v
-                      ? "bg-btn text-btn-fg ring-2 ring-[var(--tg-link)]"
-                      : "bg-[var(--tg-secbg)]"
-                  }`}
-                >
-                  <div className="text-xl">{k.emoji}</div>
-                  <div className="text-[10px]">{k.label}</div>
-                </motion.button>
-              ))}
-            </div>
-          </div>
+            {messages.map((m, i) =>
+              m.role === "user" ? (
+                <UserBubble key={i} text={m.text} />
+              ) : (
+                <AiBubble
+                  key={i}
+                  reply={m.reply}
+                  places={m.places}
+                  sent={m.sent ?? []}
+                  onSend={(pi) => sendToGroup(i, pi)}
+                  onOpenUrl={openUrl}
+                />
+              ),
+            )}
 
-          {/* Hint */}
-          <div className="space-y-1.5">
-            <div className="text-xs uppercase tracking-wider text-hint px-1">
-              пожелание (необязательно)
-            </div>
-            <input
-              value={hint}
-              onChange={(e) => setHint(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !loading) ask();
-              }}
-              placeholder="«с террасой в центре» / «до 2000 за чел»"
-              className="w-full rounded-xl bg-[var(--tg-secbg)] px-4 py-2.5 text-[15px] placeholder:text-hint outline-none focus:ring-2 focus:ring-[var(--tg-link)]"
-            />
-          </div>
+            {loading && <TypingBubble />}
 
-          <Button fullWidth size="lg" loading={loading} onClick={ask}>
-            ✨ предложи
-          </Button>
-
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-sm text-red-500"
-            >
-              {error}
-            </motion.div>
-          )}
-
-          {loading && <ThinkingCards />}
-
-          <AnimatePresence>
-            {places && (
+            {error && (
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="space-y-3"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-xs text-red-500 px-2"
               >
-                {places.map((p, i) => (
-                  <PlaceCard
-                    key={i}
-                    place={p}
-                    index={i}
-                    sent={sent === i}
-                    onSend={() => sendToGroup(p, i)}
-                    onOpenUrl={openUrl}
-                  />
-                ))}
+                {error}
               </motion.div>
             )}
-          </AnimatePresence>
+
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Composer */}
+          <div className="sticky bottom-0 safe-bottom bg-[var(--tg-bg)] border-t border-[var(--tg-secbg)] px-3 py-2">
+            <div className="flex items-end gap-2">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    ask();
+                  }
+                }}
+                rows={1}
+                placeholder="опиши что хочется — бар, план на вечер…"
+                className="flex-1 resize-none rounded-2xl bg-[var(--tg-secbg)] px-4 py-2.5 text-[15px] max-h-32 placeholder:text-hint outline-none focus:ring-2 focus:ring-[var(--tg-link)]"
+                style={{ minHeight: 44 }}
+              />
+              <Button
+                size="md"
+                loading={loading}
+                disabled={!input.trim() || loading}
+                onClick={() => ask()}
+                className="shrink-0"
+              >
+                ✨
+              </Button>
+            </div>
+          </div>
         </div>
       </PageTransition>
     </Shell>
+  );
+}
+
+function Welcome({ onExample }: { onExample: (text: string) => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-4"
+    >
+      <div className="rounded-2xl bg-[var(--tg-secbg)] p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xl">🍔</span>
+          <span className="font-semibold">шокобургер</span>
+        </div>
+        <div className="text-sm text-[var(--tg-fg)]/90 leading-snug">
+          опиши куда хочется — подберу место или распишу план на вечер.
+          можно просто «бар», можно «сначала боулинг потом пул и бар».
+        </div>
+      </div>
+      <div>
+        <div className="text-xs uppercase tracking-wider text-hint mb-2 px-1">
+          примеры
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {EXAMPLES.map((e, i) => (
+            <motion.button
+              key={i}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onExample(e.text)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-[var(--tg-secbg)] text-sm"
+            >
+              <span>{e.icon}</span>
+              <span>{e.text}</span>
+            </motion.button>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function UserBubble({ text }: { text: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20, scale: 0.98 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 400, damping: 32 }}
+      className="flex justify-end"
+    >
+      <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-btn text-btn-fg px-4 py-2 text-[15px] leading-snug whitespace-pre-wrap">
+        {text}
+      </div>
+    </motion.div>
+  );
+}
+
+function AiBubble({
+  reply,
+  places,
+  sent,
+  onSend,
+  onOpenUrl,
+}: {
+  reply: string | null;
+  places: Place[];
+  sent: number[];
+  onSend: (placeIdx: number) => void;
+  onOpenUrl: (url: string) => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+      className="space-y-2"
+    >
+      {reply && (
+        <div className="flex items-start gap-2">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--tg-link)] to-purple-500 text-white flex items-center justify-center text-lg shrink-0">
+            🍔
+          </div>
+          <div className="flex-1 rounded-2xl rounded-tl-sm bg-[var(--tg-secbg)] px-4 py-2 text-[15px] leading-snug max-w-[85%]">
+            {reply}
+          </div>
+        </div>
+      )}
+      {places.length > 0 && (
+        <div className="space-y-2 pl-10">
+          {places.map((p, i) => (
+            <PlaceCard
+              key={i}
+              place={p}
+              index={i}
+              sent={sent.includes(i)}
+              onSend={() => onSend(i)}
+              onOpenUrl={onOpenUrl}
+            />
+          ))}
+        </div>
+      )}
+    </motion.div>
   );
 }
 
@@ -192,13 +298,20 @@ function PlaceCard({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+      initial={{ opacity: 0, y: 12, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ delay: index * 0.08, type: "spring", stiffness: 300, damping: 28 }}
-      className="rounded-2xl bg-[var(--tg-secbg)] p-4 space-y-2.5"
+      transition={{ delay: index * 0.08, type: "spring", stiffness: 320, damping: 28 }}
+      className="rounded-2xl bg-[var(--tg-secbg)] p-3.5 space-y-2"
     >
       <div className="flex items-start gap-2">
-        <div className="text-2xl mt-0.5">{place.emoji || "📍"}</div>
+        <div className="text-2xl shrink-0 mt-0.5 relative">
+          {place.emoji || "📍"}
+          {place.step != null && (
+            <div className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-[var(--tg-link)] text-[9px] text-white font-bold flex items-center justify-center">
+              {place.step}
+            </div>
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-[15px]">{place.name}</div>
           {place.address && (
@@ -206,75 +319,70 @@ function PlaceCard({
           )}
         </div>
         {place.price_range && (
-          <div className="text-xs bg-[var(--tg-bg)] px-2 py-1 rounded-lg whitespace-nowrap">
+          <div className="text-[10px] bg-[var(--tg-bg)] px-2 py-1 rounded-lg whitespace-nowrap">
             {place.price_range}
           </div>
         )}
       </div>
 
       {place.why && (
-        <div className="text-sm text-[var(--tg-fg)]/90 leading-snug">
+        <div className="text-[13px] text-[var(--tg-fg)]/90 leading-snug">
           <span className="text-hint">— </span>
           {place.why}
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5 pt-1">
+      <div className="flex flex-wrap gap-1.5 items-center">
         {place.phone && (
           <a
             href={`tel:${place.phone.replace(/[^+\d]/g, "")}`}
-            className="text-xs px-3 py-1.5 bg-[var(--tg-bg)] rounded-full"
+            className="text-xs px-2.5 py-1 bg-[var(--tg-bg)] rounded-full"
           >
-            ☎️ {place.phone}
+            ☎️ позвонить
           </a>
         )}
         {place.url && (
           <button
             onClick={() => onOpenUrl(place.url!)}
-            className="text-xs px-3 py-1.5 bg-[var(--tg-bg)] rounded-full text-link"
+            className="text-xs px-2.5 py-1 bg-[var(--tg-bg)] rounded-full text-link"
           >
             🔗 подробнее
           </button>
         )}
+        <div className="flex-1" />
+        <Button
+          size="sm"
+          variant={sent ? "secondary" : "primary"}
+          onClick={onSend}
+          disabled={sent}
+        >
+          {sent ? "позвал ✓" : "позвать всех"}
+        </Button>
       </div>
-
-      <Button
-        fullWidth
-        variant={sent ? "secondary" : "primary"}
-        size="md"
-        onClick={onSend}
-        disabled={sent}
-      >
-        {sent ? "позвал ✓" : "позвать всех"}
-      </Button>
     </motion.div>
   );
 }
 
-function ThinkingCards() {
+function TypingBubble() {
   return (
-    <div className="space-y-3">
-      {[0, 1, 2].map((i) => (
-        <motion.div
-          key={i}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.1 }}
-          className="rounded-2xl bg-[var(--tg-secbg)] p-4 flex items-center gap-3"
-        >
-          <motion.div
-            animate={{ rotate: [0, 10, -10, 0] }}
-            transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15 }}
-            className="text-2xl"
-          >
-            🤔
-          </motion.div>
-          <div className="flex-1 space-y-2">
-            <div className="h-3 w-2/3 bg-[var(--tg-bg)] rounded animate-pulse" />
-            <div className="h-2 w-1/2 bg-[var(--tg-bg)] rounded animate-pulse" />
-          </div>
-        </motion.div>
-      ))}
-    </div>
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex items-start gap-2"
+    >
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--tg-link)] to-purple-500 text-white flex items-center justify-center text-lg shrink-0">
+        🍔
+      </div>
+      <div className="rounded-2xl rounded-tl-sm bg-[var(--tg-secbg)] px-4 py-3 flex items-center gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            animate={{ y: [0, -4, 0] }}
+            transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.12 }}
+            className="w-1.5 h-1.5 rounded-full bg-hint"
+          />
+        ))}
+      </div>
+    </motion.div>
   );
 }

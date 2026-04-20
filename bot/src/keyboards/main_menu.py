@@ -3,19 +3,24 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     WebAppInfo,
 )
 
 from .. import config
 
 
-def webapp_inline(label: str = "🍔 открыть приложение") -> InlineKeyboardMarkup:
+def webapp_inline(label: str = "🍔 открыть приложение") -> InlineKeyboardMarkup | None:
+    if not config.WEBAPP_URL:
+        return None
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text=label, web_app=WebAppInfo(url=config.WEBAPP_URL)),
     ]])
 
 
-def main_reply() -> ReplyKeyboardMarkup:
+def main_reply() -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
+    if not config.WEBAPP_URL:
+        return ReplyKeyboardRemove()
     return ReplyKeyboardMarkup(
         keyboard=[[
             KeyboardButton(text="🍔 моё приложение", web_app=WebAppInfo(url=config.WEBAPP_URL)),

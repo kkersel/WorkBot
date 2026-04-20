@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -16,11 +17,17 @@ TZ              = "Europe/Moscow"
 _REQUIRED = {
     "TELEGRAM_BOT_TOKEN": BOT_TOKEN,
     "DATABASE_URL": DATABASE_URL,
-    "WEBAPP_URL": WEBAPP_URL,
 }
+# Soft: bot boots without it, but WebApp buttons won't work.
+_SOFT = {"WEBAPP_URL": WEBAPP_URL}
 
 
 def validate() -> None:
     missing = [k for k, v in _REQUIRED.items() if not v]
     if missing:
         raise RuntimeError(f"missing env vars: {', '.join(missing)}")
+    soft_missing = [k for k, v in _SOFT.items() if not v]
+    if soft_missing:
+        logging.getLogger(__name__).warning(
+            "soft-missing env vars (will degrade): %s", ", ".join(soft_missing)
+        )

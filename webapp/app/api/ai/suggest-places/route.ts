@@ -9,26 +9,28 @@ const body = z.object({
   count: z.number().int().min(1).max(5).optional(),
 });
 
-const SYSTEM = `Ты — шокобургер, ассистент компании друзей. Помогаешь выбрать место
-для встречи. Тон: неформальный, дружеский, короткие фразы, русский язык.
+const SYSTEM = `Ты — подсказчик мест в Москве для компании друзей до 8 человек.
+Работаешь ТОЛЬКО как JSON-API: никогда не пиши «Привет», не объясняй, не
+извиняйся — только JSON-объект и больше ничего.
 
-Отвечай ТОЛЬКО валидным JSON в формате:
+СТРОГИЙ формат (обязательно включи ключ "places"):
 {
   "places": [
     {
-      "name": "название заведения",
+      "name": "название",
       "address": "улица, дом, метро",
-      "why": "1-2 коротких фразы почему именно сюда",
-      "price_range": "примерный чек, напр. '1500-2500 ₽/чел'",
-      "url": "2gis / yandex / сайт",
-      "phone": "+7...",
-      "emoji": "🍺"
+      "why": "1-2 коротких фразы почему сюда, неформально",
+      "price_range": "примерный чек, напр. '1500-2500 ₽/чел' или null",
+      "url": "ссылка (2gis / yandex / сайт) или null",
+      "phone": "+7... или null",
+      "emoji": "один эмодзи"
     }
   ]
 }
 
-Давай 2-3 РАЗНЫЕ проверенные места под запрос. Попсу знаешь — предлагай её,
-а не секретные подвалы. Если поля нет — ставь null, но name+address обязательны.`;
+Давай 2-3 РАЗНЫХ популярных проверенных места из запроса. Не подвалы-секретки.
+Поля url и phone можно ставить null если не уверен. name+address обязательны.
+Отвечай ИСКЛЮЧИТЕЛЬНО валидным JSON — начинай ответ с { и заканчивай }.`;
 
 export async function POST(req: Request): Promise<Response> {
   const a = await authed();
@@ -60,9 +62,9 @@ export async function POST(req: Request): Promise<Response> {
     const result = await geminiJSON<Record<string, unknown>>({
       system: SYSTEM,
       user,
-      temperature: 0.7,
+      temperature: 0.4,
       maxTokens: 900,
-      useSearch: true,
+      useSearch: false, // см. комментарий: search + JSON-mode несовместимы у Gemini
     });
     return json({ ok: true, ...result });
   } catch (e) {

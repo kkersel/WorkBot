@@ -23,16 +23,31 @@ log = logging.getLogger(__name__)
 MSK = ZoneInfo(config.TZ)
 
 
+async def _global_poll_hour() -> int:
+    """Global poll time is stored in kv under key 'gym.settings'. Default 20."""
+    value = await queries.kv_get("gym.settings")
+    if isinstance(value, dict):
+        hour = value.get("poll_hour_msk")
+        if isinstance(hour, int) and 0 <= hour <= 23:
+            return hour
+    return 20
+
+
 async def run_evening_gym_poll(bot: Bot, hour_msk: int) -> None:
-    """Runs every hour; sends a poll to users whose poll_hour_msk matches current hour."""
+    """Runs every hour; sends a poll if the *global* gym hour matches."""
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     from .. import texts
+
+    target_hour = await _global_poll_hour()
+    if hour_msk != target_hour:
+        return
 
     today = datetime.now(MSK).date()
     weekday = today.weekday()
     users = await queries.get_gym_users_for_weekday(weekday)
+    if not users:
+        return
 
-    # Filter to those whose poll_hour matches AND who are resting today
     todays_views = await compute_day(today)
     status_by_user = {v.user_id: v.status for v in todays_views}
 
@@ -42,12 +57,10 @@ async def run_evening_gym_poll(bot: Bot, hour_msk: int) -> None:
     ]])
 
     for u in users:
-        if u.get("poll_hour_msk") != hour_msk:
-            continue
         if not u.get("evening_poll"):
             continue
         if status_by_user.get(u["id"]) == "work":
-            continue  # working → no point asking
+            continue  # работаешь сегодня — бот не трогает
 
         day_entry = (u.get("days") or {}).get(str(weekday), {}) or {}
         label = day_entry.get("label") or ""

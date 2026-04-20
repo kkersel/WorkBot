@@ -58,9 +58,9 @@ export function Shell({
   if (auth.status === "error") return <ErrorScreen message={auth.message} />;
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0">
       {title && (
-        <header className="px-4 py-3 border-b border-[var(--tg-secbg)]">
+        <header className="px-4 py-3 border-b border-[var(--tg-secbg)] shrink-0">
           <motion.h1
             key={title}
             initial={{ opacity: 0, y: -4 }}
@@ -71,9 +71,9 @@ export function Shell({
           </motion.h1>
         </header>
       )}
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <main className="flex-1 overflow-y-auto min-h-0">{children}</main>
       {!hideNav && (
-        <nav className="safe-bottom grid grid-cols-5 border-t border-[var(--tg-secbg)] bg-[var(--tg-bg)]">
+        <nav className="safe-bottom grid grid-cols-5 border-t border-[var(--tg-secbg)] bg-[var(--tg-bg)] shrink-0">
           {NAV.map((n) => {
             const active = pathname === n.href;
             return (

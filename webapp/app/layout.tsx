@@ -29,9 +29,10 @@ export default function RootLayout({
   return (
     <html
       lang="ru"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      style={{ height: "100dvh" }}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
